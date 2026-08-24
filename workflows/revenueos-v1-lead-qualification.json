@@ -1,0 +1,618 @@
+{
+  "name": "RevenueOS v1 — AI Lead Qualification & Routing",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1504,
+        32
+      ],
+      "id": "5cf218a5-a872-4307-b589-7665f4c093b5",
+      "name": "Run Lead Qualification"
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "operation": "search",
+        "filterGroupsUi": {
+          "filterGroupsValues": [
+            {
+              "filtersUi": {
+                "filterValues": [
+                  {
+                    "propertyName": "ai_qualification_status|enumeration",
+                    "value": "Pending"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "properties": [
+            "firstname",
+            "lastname",
+            "email",
+            "company_size",
+            "numemployees",
+            "annualrevenue",
+            "jobtitle",
+            "company",
+            "ai_qualification_status"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        -1264,
+        32
+      ],
+      "id": "da8571bb-95d8-45e9-a965-d6765023b864",
+      "name": "Fetch Pending Leads",
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "KBR97cDkkWXcCfBv",
+          "name": "RevenueOS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction parseRevenue(value) {\n  if (value === null || value === undefined || value === '') {\n    return null;\n  }\n\n  // Already numeric\n  if (typeof value === 'number') {\n    return value;\n  }\n\n  let text = String(value)\n    .trim()\n    .toLowerCase()\n    .replace(/,/g, '')\n    .replace(/\\$/g, '');\n\n  // Handle values such as:\n  // 50m\n  // 50 million\n  // 1.2b\n  // 750k\n  const match = text.match(/^([\\d.]+)\\s*(k|m|b|thousand|million|billion)?/);\n\n  if (!match) {\n    return null;\n  }\n\n  const number = parseFloat(match[1]);\n  const unit = match[2];\n\n  if (Number.isNaN(number)) {\n    return null;\n  }\n\n  switch (unit) {\n    case 'k':\n    case 'thousand':\n      return number * 1000;\n\n    case 'm':\n    case 'million':\n      return number * 1000000;\n\n    case 'b':\n    case 'billion':\n      return number * 1000000000;\n\n    default:\n      return number;\n  }\n}\n\nfunction parseEmployeeRange(value) {\n  if (value === null || value === undefined || value === '') {\n    return {\n      employee_min: null,\n      employee_max: null\n    };\n  }\n\n  const text = String(value).trim().toLowerCase();\n\n  // Example: \"100-500\"\n  const range = text.match(/(\\d+)\\s*-\\s*(\\d+)/);\n\n  if (range) {\n    return {\n      employee_min: Number(range[1]),\n      employee_max: Number(range[2])\n    };\n  }\n\n  // Example: \"500+\"\n  const plus = text.match(/(\\d+)\\+/);\n\n  if (plus) {\n    return {\n      employee_min: Number(plus[1]),\n      employee_max: null\n    };\n  }\n\n  // Example: \"250\"\n  const single = text.match(/^\\d+$/);\n\n  if (single) {\n    const number = Number(single[0]);\n\n    return {\n      employee_min: number,\n      employee_max: number\n    };\n  }\n\n  return {\n    employee_min: null,\n    employee_max: null\n  };\n}\n\nreturn items.map(item => {\n  const properties = item.json.properties || {};\n\n  const annualRevenue = properties.annualrevenue;\n  const employeeCount = properties.numemployees;\n\n  const employeeRange = parseEmployeeRange(employeeCount);\n\n  return {\n    json: {\n      ...item.json,\n\n      normalized: {\n        annualrevenue_numeric: parseRevenue(annualRevenue),\n        employee_min: employeeRange.employee_min,\n        employee_max: employeeRange.employee_max\n      }\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1040,
+        32
+      ],
+      "id": "9e3aafa5-4731-445a-9b34-230ba57a08f9",
+      "name": "Normalize Lead Data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "deepSeekApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"deepseek-chat\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an AI Lead Qualification Engine for Lolia. Analyze each lead against Lolia's ICP and respond ONLY with valid JSON. Do not include markdown or explanations. Lolia's ICP: B2B SaaS companies with 50–2,000 employees, more than $10M in annual revenue, dedicated sales teams, and using HubSpot or Salesforce. Primary buyers include VP of Sales, CRO, and RevOps leaders. Return this exact structure: {\\\"lead_score\\\": number, \\\"qualification_status\\\": \\\"Qualified\\\" or \\\"Unqualified\\\", \\\"icp_match\\\": true or false, \\\"reasoning\\\": \\\"short explanation\\\"}.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Lead Information:\\n\\nFirst Name: {{$json.properties.firstname}}\\nLast Name: {{$json.properties.lastname}}\\nEmail: {{$json.properties.email}}\\nCompany: {{$json.properties.company}}\\nJob Title: {{$json.properties.jobtitle}}\\nAnnual Revenue: {{$json.properties.annualrevenue}}\\nAnnual Revenue (Numeric): {{$json.normalized.annualrevenue_numeric}}\\nEmployees: {{$json.properties.numemployees}}\\nEmployee Minimum: {{$json.normalized.employee_min}}\\nEmployee Maximum: {{$json.normalized.employee_max}}\\nCRM: HubSpot\"\n    }\n  ],\n  \"temperature\": 0.2,\n  \"max_tokens\": 200\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -816,
+        32
+      ],
+      "id": "d3cf3652-f26c-4f36-9290-a36a1d7e4101",
+      "name": "AI Lead Qualification",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "deepSeekApi": {
+          "id": "AegmjqNV5RPG1b71",
+          "name": "DeepSeek account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "91079392-4c12-41b0-b10f-fe1d32a7e83e",
+              "leftValue": "={{ !!$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -576,
+        32
+      ],
+      "id": "bb0c70aa-d205-4cf4-8b09-14cedf6e0ef5",
+      "name": "AI Response Valid?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f02ea1f4-c784-430d-a57d-561bb366fb8d",
+              "name": "status",
+              "value": "AI Request Failed",
+              "type": "string"
+            },
+            {
+              "id": "94481f03-d91f-4759-8b0d-69519af11366",
+              "name": "workflow",
+              "value": "RevenueOS v1",
+              "type": "string"
+            },
+            {
+              "id": "bdaa7ad2-23c1-48d9-b2dc-b14fb3563659",
+              "name": "stage",
+              "value": "Lead Qualification",
+              "type": "string"
+            },
+            {
+              "id": "5bd5693d-f653-4e19-9895-26d7c6b139f0",
+              "name": "timestamp",
+              "value": "={{$now}}",
+              "type": "string"
+            },
+            {
+              "id": "4702acd2-37fa-4230-807c-2b4bb4ce5fa7",
+              "name": "error_message",
+              "value": "={{ $json.error?.message || $json.message || 'Unknown AI request error' }}",
+              "type": "string"
+            },
+            {
+              "id": "12c2ffa1-303a-4d15-bdfc-b03bf9e9caf9",
+              "name": "lead_email",
+              "value": "={{ $('Fetch Pending Leads').item.json.properties.email }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -224,
+        -144
+      ],
+      "id": "9dce39cd-ce26-4289-b902-ef7811d1b968",
+      "name": "Log Qualification Error"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "workflow_errors",
+          "mode": "list",
+          "cachedResultName": "workflow_errors"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "retry_count": 0,
+            "timestamp": "={{ $json.timestamp }}",
+            "workflow": "={{ $json.workflow }}",
+            "stage": "={{ $json.stage }}",
+            "error_message": "={{ $json.error_message }}",
+            "lead_email": "={{ $json.lead_email }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "workflow",
+              "displayName": "workflow",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_email",
+              "displayName": "lead_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "retry_count",
+              "displayName": "retry_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        16,
+        -144
+      ],
+      "id": "b8e3a5f6-67a7-4483-8a5d-7fab1f6557bd",
+      "name": "Store Workflow Error",
+      "credentials": {
+        "postgres": {
+          "id": "Iivu9I7Z8ofEnlop",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = $json.body.choices[0].message.content;\n\nconst aiResult = JSON.parse(content);\n\nconst originalLead = $(\"Normalize Lead Data\").item.json;\n\nreturn [\n  {\n    json: {\n      ...originalLead,\n      ...aiResult\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        160
+      ],
+      "id": "ecae076d-f1d1-44c5-9ed2-b6e88e4cf938",
+      "name": "Parse AI Qualification"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "74ee5f1a-39af-4563-9fd3-6deb0f83ac3c",
+              "leftValue": "={{ $('Parse AI Qualification').item.json.qualification_status }}",
+              "rightValue": "Qualified",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        48,
+        160
+      ],
+      "id": "879306a6-bce5-44cc-9934-b5924fb84a93",
+      "name": "Lead Qualified?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const revenue = $json.normalized?.annualrevenue_numeric || 0;\nconst employeeMin = $json.normalized?.employee_min || 0;\n\nlet segment;\nlet ownerId;\n\nif (revenue >= 100000000 || employeeMin >= 1000) {\n  segment = \"Enterprise\";\n  ownerId = \"94093807\";\n} else if (revenue >= 25000000 || employeeMin >= 100) {\n  segment = \"Mid-Market\";\n  ownerId = \"96695984\";\n} else {\n  segment = \"Commercial\";\n  ownerId = \"36925333\";\n}\n\nreturn [\n  {\n    json: {\n      ...$json,\n      sales_segment: segment,\n      assigned_owner_id: ownerId\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        48
+      ],
+      "id": "5df171ff-b880-4fac-a4a9-b2d7a210dee2",
+      "name": "Route Lead by Segment"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.hubapi.com/crm/v3/objects/contacts/{{ $('Fetch Pending Leads').item.json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"properties\": {\n    \"lead_score\": {{$json.lead_score}},\n    \"qualification_status\": \"{{$json.qualification_status}}\",\n    \"icp_match\": {{$json.icp_match}},\n    \"ai_reasoning\": \"{{$json.reasoning}}\",\n    \"hubspot_owner_id\": \"{{$json.assigned_owner_id}}\",\n    \"ai_qualification_status\": \"{{$json.qualification_status}}\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        672,
+        48
+      ],
+      "id": "c9e6e39a-bea7-4bcb-8516-c1e84cde4573",
+      "name": "Update Qualified Lead",
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "KBR97cDkkWXcCfBv",
+          "name": "RevenueOS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "resource": "engagement",
+        "type": "task",
+        "dueDate": "={{ $now.plus({ days: 1 }).toISO() }}",
+        "metadata": {
+          "body": "Follow up with this qualified lead from RevenueOS v1.",
+          "forObjectType": "CONTACT",
+          "status": "NOT_STARTED",
+          "subject": "Follow up with qualified lead"
+        },
+        "additionalFields": {
+          "associations": {
+            "contactIds": "={{ $('Fetch Pending Leads').item.json.id }}"
+          }
+        }
+      },
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        912,
+        48
+      ],
+      "id": "53d29b99-5d4c-4e83-9487-2036a80baa0d",
+      "name": "Create Qualified Follow-Up Task",
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "KBR97cDkkWXcCfBv",
+          "name": "RevenueOS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.hubapi.com/crm/v3/objects/contacts/{{ $('Fetch Pending Leads').item.json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"properties\": {\n    \"lead_score\": {{$json.lead_score}},\n    \"qualification_status\": \"{{$json.qualification_status}}\",\n    \"icp_match\": {{$json.icp_match}},\n    \"ai_reasoning\": \"{{$json.reasoning}}\",\n    \"ai_qualification_status\": \"Disqualified\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        432,
+        256
+      ],
+      "id": "88e067cc-b0e2-4680-a9c5-6d33d7a5c1c3",
+      "name": "Update Disqualified Lead",
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "KBR97cDkkWXcCfBv",
+          "name": "RevenueOS"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Run Lead Qualification": {
+      "main": [
+        [
+          {
+            "node": "Fetch Pending Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pending Leads": {
+      "main": [
+        [
+          {
+            "node": "Normalize Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Lead Data": {
+      "main": [
+        [
+          {
+            "node": "AI Lead Qualification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Lead Qualification": {
+      "main": [
+        [
+          {
+            "node": "AI Response Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "AI Response Valid?": {
+      "main": [
+        [
+          {
+            "node": "Log Qualification Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse AI Qualification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Qualification Error": {
+      "main": [
+        [
+          {
+            "node": "Store Workflow Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Workflow Error": {
+      "main": [
+        []
+      ]
+    },
+    "Parse AI Qualification": {
+      "main": [
+        [
+          {
+            "node": "Lead Qualified?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Qualified?": {
+      "main": [
+        [
+          {
+            "node": "Route Lead by Segment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Disqualified Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Lead by Segment": {
+      "main": [
+        [
+          {
+            "node": "Update Qualified Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Qualified Lead": {
+      "main": [
+        [
+          {
+            "node": "Create Qualified Follow-Up Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Qualified Follow-Up Task": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "3c103f6e-eab4-476a-9372-5b57946f4945",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "dc26d2efaea614ccaf8b4de449784bb72ab8e4511c85b797ef8698857916f00a"
+  },
+  "nodeGroups": [],
+  "id": "PwkbEqaawfF8L1kE",
+  "tags": []
+}
