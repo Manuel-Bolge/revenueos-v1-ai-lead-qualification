@@ -1,0 +1,24 @@
+{
+  "hubspot_contact": {
+    "properties": {
+      "firstname": "Alex",
+      "lastname": "Chen",
+      "email": "alex@momandpop.com",
+      "company": "Mom and Pop Shop",
+      "jobtitle": "Owner",
+      "annualrevenue": "$500k",
+      "numemployees": "12"
+    }
+  },
+  "normalized": {
+    "annualrevenue_numeric": 500000,
+    "employee_min": 12,
+    "employee_max": 12
+  },
+  "ai_result": {
+    "lead_score": 15,
+    "qualification_status": "Unqualified",
+    "icp_match": false,
+    "reasoning": "Company revenue ($500k) and employee count (12) are well below the minimum thresholds for the Lolia ICP."
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "hubspot_contact": {
+    "properties": {
+      "firstname": "Sarah",
+      "lastname": "Mitchell",
+      "email": "sarah@novatech.com",
+      "company": "NovaTech",
+      "jobtitle": "CRO",
+      "annualrevenue": "$150M",
+      "numemployees": "1,500"
+    }
+  },
+  "normalized": {
+    "annualrevenue_numeric": 150000000,
+    "employee_min": 1500,
+    "employee_max": 1500
+  },
+  "ai_result": {
+    "lead_score": 90,
+    "qualification_status": "Qualified",
+    "icp_match": true,
+    "reasoning": "NovaTech exceeds the $10M revenue and 50 employee minimums for the ICP. As CRO, Sarah is a primary buyer."
+  },
+  "routing": {
+    "sales_segment": "Enterprise",
+    "assigned_owner_id": "94093807"
+  }
+}
