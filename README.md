@@ -1,5 +1,8 @@
 # RevenueOS v1: AI Lead Qualification & Routing
 
+## System Architecture
+![RevenueOS v1 Architecture](diagrams/revenueos-v1-architecture.png)
+
 ## The Business Problem
 
 At **Lolia**, a Series B AI-powered Revenue Intelligence SaaS company, inbound lead volume had grown faster than the Sales team could manually qualify and route every prospect.
@@ -53,6 +56,17 @@ RevenueOS v1 is designed to improve the operational efficiency of the inbound sa
 The key outcome is **faster movement from inbound lead → qualified opportunity**, while allowing sales representatives to spend more time selling rather than performing repetitive qualification work.
 
 ---
+
+## System Proof
+
+**1. The Orchestration (n8n Workflow)**
+![n8n Workflow](screenshots/workflow-overview.png)
+
+**2. The AI Brain (DeepSeek Evaluation)**
+![AI Output](screenshots/ai-qualification-output.png)
+
+**3. The Business Result (HubSpot Update)**
+![HubSpot Result](screenshots/hubspot-result.png)
 
 ## System Architecture & Logic
 
